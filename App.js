@@ -1,209 +1,149 @@
-import * as React from 'react';
-import {
-  Alert,
-  Badge,
-  Button,
-  Card,
-  Collection,
-  Divider,
-  Flex,
-  Heading,
-  Image,
-  Rating,
-  SelectField,
-  StepperField,
-  SwitchField,
-  Text,
-  View,
-} from '@aws-amplify/ui-react';
-import '@aws-amplify/ui-react/styles.css';
-import { PAINTINGS } from './paintings';
+/* src/App.js */
+import React, { useEffect, useState } from 'react'
+import Amplify, { API, graphqlOperation } from 'aws-amplify'
+import { createTea, deleteTea, updateTea } from './graphql/mutations'
+import { listTeas } from './graphql/queries'
 
-function App() {
-  const [currentPainting, setCurrentPainting] = React.useState(PAINTINGS[0]);
-  const [image, setImage] = React.useState(PAINTINGS[0].src);
-  const [frame, setFrame] = React.useState(true);
-  const [quantity, setQuantity] = React.useState(1);
-  const [size, setSize] = React.useState('');
-  const [error, setError] = React.useState(false);
+import awsExports from "./aws-exports";
+Amplify.configure(awsExports);
 
-  const handleAddToCart = () => {
-    if (size === '') {
-      setError(true);
-      return;
+const initialState = { name: '', bags: '' }
+
+const App = () => {
+  const [formState, setFormState] = useState(initialState)
+  const [teas, setTeas] = useState([])
+
+  useEffect(() => {
+    fetchTeas()
+  }, [])
+
+  function setInput(key, value) {
+    setFormState({ ...formState, [key]: value })
+  }
+
+  async function fetchTeas() {
+    try {
+      const teaData = await API.graphql(graphqlOperation(listTeas))
+      const teas = teaData.data.listTeas.items
+      
+      setTeas(teas)
+    } catch (err) { console.log('error fetching teas') }
+  }
+
+  async function addTea() {
+    try {
+      if (!formState.name || !formState.bags) return
+      
+      const tea = { ...formState }
+      
+      setTeas([...teas, tea])
+      setFormState(initialState)
+      
+      await API.graphql(graphqlOperation(createTea, {input: tea}))
+      
+      fetchTeas()
+    } catch (err) {
+      console.log('error creating tea:', err)
     }
-    alert(
-      `Added to cart!\n${quantity} ${size} "${currentPainting.title}" by ${
-        currentPainting.artist
-      } with ${frame ? 'a' : 'no'} frame`
-    );
-  };
+  }
+
+  async function removeTea(index) {
+    try {
+      if (teas.length > index) {
+        const teaId = {id: teas[index].id}
+        
+        teas.splice(index, 1)
+        setTeas([...teas])
+        
+        await API.graphql(graphqlOperation(deleteTea, {input: teaId}))
+      }
+    } catch (err) {
+      console.log('error deleting tea:', err)
+    }
+  }
+
+  async function drinkTea(index) {
+    try {
+      if (teas.length > index) {
+        let tea = teas[index]
+        const newCount = parseInt(tea.bags) - 1
+
+        if (newCount <= 0) {
+          teas.splice(index, 1)
+          setTeas([...teas])
+
+          await API.graphql(graphqlOperation(deleteTea, {input: {id: tea.id}}))
+        } else {
+          tea.bags = newCount
+          teas.splice(index, 1, tea)
+
+          tea = {
+            id: tea.id,
+            name: tea.name,
+            bags: tea.bags
+          }
+
+          setTeas([...teas])
+            
+          await API.graphql(graphqlOperation(updateTea, {input: tea}))
+        }
+      }
+    } catch (err) {
+      console.log('error drinking tea:', err)
+    }
+  }
 
   return (
-    <View width="100%" maxWidth="50rem" padding={{ base: 0, large: '2rem' }}>
-      <Card variation="outlined">
-        <Flex
-          direction={{ base: 'column', large: 'row' }}
-          justifyContent="space-evenly"
-        >
-          <Flex direction="column" gap="5rem" alignItems="center">
-            <View width="15rem" height="19rem">
-              <Image
-                src={image}
-                alt={`${currentPainting.title} abstract painting`}
-                width="100%"
-                height="21rem"
-                border={frame ? '3px solid black' : ''}
-              />
-            </View>
-            <Collection
-              type="grid"
-              items={PAINTINGS}
-              templateColumns="1fr 1fr 1fr 1fr"
-              templateRows="1fr 1fr"
-              width="14rem"
-            >
-              {(item, index) => (
-                <Flex
-                  width="100%"
-                  onMouseOver={() => setImage(item.src)}
-                  onMouseLeave={() => setImage(currentPainting.src)}
-                  key={index}
-                  justifyContent="center"
-                >
-                  <Image
-                    src={item.src}
-                    alt={`${item.title} abstract painting`}
-                    width="2rem"
-                    height="2.5rem"
-                    onClick={() => setCurrentPainting(item)}
-                    borderRadius="5px"
-                    padding="3px"
-                    marginBottom="1rem"
-                    style={{
-                      cursor: 'pointer',
-                      ...(currentPainting.src === item.src && {
-                        border: '1px solid #e77600',
-                        boxShadow: 'rgba(0, 0, 0, 0.35) 0px 3px 8px',
-                      }),
-                    }}
-                  />
-                </Flex>
-              )}
-            </Collection>
-          </Flex>
-          <Flex direction="column" justifyContent="space-between">
-            <Flex direction="column" gap="0.7rem">
-              <Flex justifyContent="space-between" alignItems="center">
-                <Heading level={3}>{currentPainting.title}</Heading>
-                <Flex height="1.8rem">
-                  {currentPainting.bestSeller ? (
-                    <Badge variation="success">Bestseller</Badge>
-                  ) : null}
-                  {currentPainting.isNew ? (
-                    <Badge variation="info">New</Badge>
-                  ) : null}
-                  {currentPainting.limitedSupply ? (
-                    <Badge variation="warning">Limited supply</Badge>
-                  ) : null}
-                </Flex>
-              </Flex>
-              <Text fontWeight="bold">{currentPainting.artist}</Text>
-              <Flex
-                direction={{ base: 'column', large: 'row' }}
-                alignItems="baseline"
-              >
-                <Rating
-                  value={currentPainting.avgRating}
-                  fillColor="#f4a41d"
-                ></Rating>
-                <Text fontSize="small" fontWeight="lighter">
-                  {currentPainting.reviews} reviews
-                </Text>
-              </Flex>
-              <Divider />
-              <Flex alignItems="baseline">
-                <Text fontSize="medium" fontWeight="bold">
-                  Price:
-                </Text>
-                <Text fontSize="large" color="#B12704" fontWeight="bold">
-                  {currentPainting.price}
-                </Text>
-              </Flex>
-              <Text fontSize="small" paddingBottom="1rem">
-                {currentPainting.description}
-              </Text>
-              {currentPainting.readyForPickup ? (
-                <Text>
-                  <Text variation="success" as="span">
-                    Ready within 2 hours
-                  </Text>{' '}
-                  for pickup inside the store
-                </Text>
-              ) : null}
-              <SwitchField
-                label={frame ? 'Frame' : 'No frame'}
-                labelPosition="end"
-                isChecked={frame}
-                onChange={(e) => {
-                  setFrame(e.target.checked);
-                }}
-                isDisabled={!currentPainting.inStock}
-              />
-              <SelectField
-                label="Size"
-                labelHidden
-                variation="quiet"
-                placeholder="Select your size"
-                value={size}
-                onChange={(e) => {
-                  e.target.value !== '' && setError(false);
-                  setSize(e.target.value);
-                }}
-                hasError={error}
-                errorMessage="Please select a size."
-                isDisabled={!currentPainting.inStock}
-              >
-                <option value="Small" label='Small (12x16")' />
-                <option value="Medium" label='Medium (18x24")' />
-                <option value="Large" label='Large (24x36")' />
-                <option value="X-Large" label='X-Large (30x40")' disabled />
-              </SelectField>
-              {!currentPainting.inStock ? (
-                <Alert variation="error">Out of stock!</Alert>
-              ) : null}
-            </Flex>
-            <Flex
-              justifyContent="space-between"
-              direction={{ base: 'column', large: 'row' }}
-            >
-              <Flex alignItems="center" gap="5px">
-                <Text>Qty:</Text>
-                <StepperField
-                  label="Quantity"
-                  value={quantity}
-                  onStepChange={setQuantity}
-                  min={0}
-                  max={10}
-                  step={1}
-                  labelHidden
-                  width="10rem"
-                  isDisabled={!currentPainting.inStock}
-                />
-              </Flex>
-              <Button
-                variation="primary"
-                onClick={handleAddToCart}
-                disabled={!currentPainting.inStock || !quantity}
-              >
-                Add to Cart
-              </Button>
-            </Flex>
-          </Flex>
-        </Flex>
-      </Card>
-    </View>
-  );
+    <div style={styles.container}>
+      <h2>Tea Management App 🌿</h2>
+      <div style={styles.inputContainer}>
+      <input
+        onChange={event => setInput('name', event.target.value)}
+        style={styles.input}
+        value={formState.name}
+        placeholder="Name"
+      />
+      <input
+        type="number"
+        onChange={event => setInput('bags', event.target.value)}
+        style={styles.input}
+        value={formState.bags}
+        placeholder="# of bags"
+      />
+      </div>
+      <button style={styles.button} onClick={addTea}>+ Add Tea</button>
+      <div style={styles.teaContainer}>
+        <h4>Currently Available Tea</h4>
+        {
+          teas.map((tea, index) => (
+            <div key={tea.id ? tea.id : index} style={styles.tea}>
+              <div>
+                <p style={styles.teaName}>{tea.name}</p>
+                <p style={styles.teaBags}>{tea.bags} Bags</p>
+              </div>
+              <div>
+                <button style={styles.drinkButton} onClick={() => drinkTea(index)}>Drink</button>
+                <button style={styles.deleteButton} onClick={() => removeTea(index)}>Delete</button>
+              </div>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  )
 }
 
-export default App;
+const styles = {
+  container: { width: 400, margin: '0 auto', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: 20 },
+  inputContainer: {display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexDirection: 'row', width: '100%'},
+  input: { boxSizing: 'border-box', borderRadius: 5, maxWidth: 195, border: 'none', backgroundColor: '#efefef', marginBottom: 10, padding: 8, fontSize: 18 },
+  teaContainer: {marginTop: 25},
+  tea: {  marginBottom: 10, marginTop: 10, padding: 10, backgroundColor: '#eee', borderRadius: 5, display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'},
+  teaName: { fontSize: 20, fontWeight: 'bold', marginTop: 0, marginBottom: 10 },
+  teaBags: { marginBottom: 0, marginTop: 0, color: '#666', fontStyle: 'italic' },
+  button: { backgroundColor: '#27ae60', border: 'none', color: 'white', outline: 'none', fontSize: 18, padding: '12px 0px', borderRadius: 5, cursor: 'pointer'},
+  drinkButton: { backgroundColor: '#27ae60', color: 'white', border: 'none', borderRadius: 5, fontSize: 14, height: 30, cursor: 'pointer', marginRight: 5},
+  deleteButton: { backgroundColor: '#e76558', color: 'white', border: 'none', borderRadius: 5, fontSize: 14, height: 30, cursor: 'pointer'},
+}
+
+export default App
